@@ -1,0 +1,54 @@
+name: Build and Push Docker Image
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get latest almir/webhook version tag from Docker Hub
+        id: get-version
+        run: |
+          # Get all tags, filter semver, sort and pick the latest
+          TAG=$(curl -s 'https://registry.hub.docker.com/v2/repositories/almir/webhook/tags?page_size=100' |
+            jq -r '.results[].name' |
+            grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' |
+            sort -V |
+            tail -n1)
+          echo "Latest webhook version: $TAG"
+          echo "webhook_version=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Build and tag image
+        run: |
+          VERSION=${{ steps.get-version.outputs.webhook_version }}
+          IMAGE=ghcr.io/${{ github.repository }}
+          BASE_IMAGE="almir/webhook:$VERSION"
+          echo "Using base image $BASE_IMAGE"
+          docker pull $BASE_IMAGE
+          docker build --build-arg BASE_IMAGE=$BASE_IMAGE -t $IMAGE:$VERSION .
+          docker tag $IMAGE:$VERSION $IMAGE:latest
+
+      - name: Push image to GHCR
+        run: |
+          VERSION=${{ steps.get-version.outputs.webhook_version }}
+          IMAGE=ghcr.io/${{ github.repository }}
+          docker push $IMAGE:$VERSION
+          docker push $IMAGE:latest
