@@ -1,4 +1,4 @@
-FROM almir/webhook:2.8.2
+FROM almir/webhook:2.8.3
 
 USER root
 
